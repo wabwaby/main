@@ -5,9 +5,9 @@ cd /d "%~dp0\.."
 
 where py >nul 2>nul
 if %errorlevel%==0 (
-    py -3 love-letter\build_exe.py
+    py -3 project-atrocities\build_exe.py
 ) else (
-    python love-letter\build_exe.py
+    python project-atrocities\build_exe.py
 )
 
 echo.

@@ -1,12 +1,12 @@
-"""Build the love letter app into a Windows .exe.
+"""Build Project Atrocities into a Windows .exe.
 
 Run this from the repository root after customizing main.py:
 
-    python love-letter/build_exe.py
+    python project-atrocities/build_exe.py
 
 The finished file will be written to:
 
-    dist/Love Letter.exe
+    dist/Project Atrocities.exe
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 
-APP_NAME = "Love Letter"
+APP_NAME = "Project Atrocities"
 
 
 def run(command: list[str]) -> None:
@@ -52,10 +52,10 @@ def ensure_pyinstaller() -> None:
 
 def build_exe() -> Path:
     repo_root = Path(__file__).resolve().parents[1]
-    app_entry = repo_root / "love-letter" / "main.py"
+    app_entry = repo_root / "project-atrocities" / "main.py"
     dist_dir = repo_root / "dist"
     build_dir = repo_root / "build"
-    icon_file = repo_root / "love-letter" / "icon.ico"
+    icon_file = repo_root / "project-atrocities" / "icon.ico"
 
     command = [
         sys.executable,

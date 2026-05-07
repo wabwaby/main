@@ -1,12 +1,12 @@
-# Love Letter App
+# Project Atrocities
 
-A tiny Python "love letter exe" style app: an envelope opens, hearts float around,
-and a custom message types itself out on screen.
+A tiny Python desktop app: an envelope opens, hearts float around, and a custom
+message types itself out on screen.
 
 ## Run it
 
 ```bash
-python3 love-letter/main.py
+python3 project-atrocities/main.py
 ```
 
 The app only uses Python's standard library (`tkinter`), so there are no Python
@@ -22,7 +22,7 @@ with the standard options.
 
 ## Customize it
 
-Open `love-letter/main.py` and edit the section named `Make it yours`:
+Open `project-atrocities/main.py` and edit the section named `Make it yours`:
 
 - `RECIPIENT_NAME`
 - `SENDER_NAME`
@@ -38,13 +38,13 @@ You can also tweak the colors in the `Theme` section.
 Run this command on Windows from the repository root:
 
 ```powershell
-python love-letter/build_exe.py
+python project-atrocities/build_exe.py
 ```
 
 Or double-click:
 
 ```text
-love-letter/build_exe.bat
+project-atrocities/build_exe.bat
 ```
 
 The build script installs PyInstaller if you do not already have it.
@@ -52,7 +52,7 @@ The build script installs PyInstaller if you do not already have it.
 Your executable will be created at:
 
 ```text
-dist/Love Letter.exe
+dist/Project Atrocities.exe
 ```
 
 Important: build the `.exe` on Windows. PyInstaller packages for the operating

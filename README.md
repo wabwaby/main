@@ -1,6 +1,6 @@
-# Love Letter Experiments
+# Project Atrocities
 
-This repository contains a small Python love letter app in `love-letter/`.
+This repository contains a small Python desktop app in `project-atrocities/`.
 
-See `love-letter/README.md` for customization and Windows `.exe` packaging
+See `project-atrocities/README.md` for customization and Windows `.exe` packaging
 instructions.

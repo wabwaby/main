@@ -1,12 +1,12 @@
-"""A tiny customizable love-letter app.
+"""A tiny customizable desktop note app.
 
 Edit the values in the "Make it yours" section, then run:
 
-    python3 love-letter/main.py
+    python3 project-atrocities/main.py
 
 To package on Windows:
 
-    python love-letter/build_exe.py
+    python project-atrocities/build_exe.py
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ NO_REPLY = "That's okay. I still hope this made your day softer."
 # Theme
 # ---------------------------------------------------------------------------
 
-WINDOW_TITLE = "a little love letter.exe"
+WINDOW_TITLE = "project atrocities.exe"
 BG = "#1f1025"
 PANEL = "#fff1f7"
 PANEL_DARK = "#ffd7e8"
@@ -184,7 +184,7 @@ class LoveLetterApp:
 
         tk.Label(
             self.card,
-            text="You received a tiny love letter",
+            text="You received a classified note",
             font=self.title_font,
             fg=TEXT,
             bg=PANEL,
