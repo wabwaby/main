@@ -6,8 +6,7 @@ Edit the values in the "Make it yours" section, then run:
 
 To package on Windows:
 
-    python -m pip install pyinstaller
-    pyinstaller --onefile --windowed --name "Love Letter" love-letter/main.py
+    python love-letter/build_exe.py
 """
 
 from __future__ import annotations

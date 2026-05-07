@@ -35,17 +35,28 @@ You can also tweak the colors in the `Theme` section.
 
 ## Make it a Windows `.exe`
 
-Run these commands on Windows from the repository root:
+Run this command on Windows from the repository root:
 
 ```powershell
-python -m pip install pyinstaller
-pyinstaller --onefile --windowed --name "Love Letter" love-letter/main.py
+python love-letter/build_exe.py
 ```
+
+Or double-click:
+
+```text
+love-letter/build_exe.bat
+```
+
+The build script installs PyInstaller if you do not already have it.
 
 Your executable will be created at:
 
 ```text
 dist/Love Letter.exe
 ```
+
+Important: build the `.exe` on Windows. PyInstaller packages for the operating
+system it is running on, so a Linux or macOS computer cannot directly create the
+Windows `.exe` with this script.
 
 Tip: send the `.exe` with a short note so the recipient knows it is from you.
