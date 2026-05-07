@@ -6,11 +6,19 @@ and a custom message types itself out on screen.
 ## Run it
 
 ```bash
-python love-letter/main.py
+python3 love-letter/main.py
 ```
 
-The app only uses Python's standard library (`tkinter`), so there are no project
-dependencies to install.
+The app only uses Python's standard library (`tkinter`), so there are no Python
+package dependencies to install. If your Linux Python install is very minimal and
+you see `No module named 'tkinter'`, install Tkinter with:
+
+```bash
+sudo apt install python3-tk
+```
+
+On Windows, Python from python.org includes Tkinter by default when installed
+with the standard options.
 
 ## Customize it
 

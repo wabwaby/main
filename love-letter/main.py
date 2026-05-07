@@ -2,7 +2,7 @@
 
 Edit the values in the "Make it yours" section, then run:
 
-    python love-letter/main.py
+    python3 love-letter/main.py
 
 To package on Windows:
 
@@ -13,9 +13,13 @@ To package on Windows:
 from __future__ import annotations
 
 import random
-import tkinter as tk
 from dataclasses import dataclass
 from typing import Callable
+
+try:
+    import tkinter as tk
+except ModuleNotFoundError:  # pragma: no cover - depends on the local Python install.
+    tk = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +343,14 @@ class LoveLetterApp:
 
 
 def main() -> None:
+    if tk is None:
+        print(
+            "This app needs tkinter.\n"
+            "On Ubuntu/Debian, install it with: sudo apt install python3-tk\n"
+            "On Windows, install Python from python.org with the default options."
+        )
+        raise SystemExit(1)
+
     app = LoveLetterApp()
     app.run()
 
