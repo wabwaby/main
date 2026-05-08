@@ -33,6 +33,9 @@ Open `project-atrocities/main.py` and edit the section named `Make it yours`:
 
 You can also tweak the colors in the `Theme` section.
 
+Longer messages are supported. While the message is typing, click the message
+box to skip straight to the final prompt.
+
 ## Make it a Windows `.exe`
 
 Run this command on Windows from the repository root:

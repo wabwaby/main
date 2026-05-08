@@ -60,6 +60,10 @@ TEXT = "#3b1f2f"
 ACCENT = "#ff5f9e"
 ACCENT_DARK = "#d83a78"
 HEARTS = ["#ff5f9e", "#ff8ebd", "#ffc2d8", "#f43f7f", "#ffd1dc"]
+CARD_WIDTH = 660
+CARD_HEIGHT = 500
+TYPEWRITER_DELAY_MS = 18
+TYPEWRITER_NEWLINE_DELAY_MS = 80
 
 
 @dataclass
@@ -74,8 +78,8 @@ class LoveLetterApp:
     def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title(WINDOW_TITLE)
-        self.root.geometry("820x620")
-        self.root.minsize(640, 520)
+        self.root.geometry("900x700")
+        self.root.minsize(760, 620)
         self.root.configure(bg=BG)
 
         self.canvas = tk.Canvas(self.root, bg=BG, highlightthickness=0)
@@ -87,6 +91,7 @@ class LoveLetterApp:
         self.current_text = ""
         self.target_text = ""
         self.not_yet_clicks = 0
+        self.prompt_shown = False
 
         self.title_font = ("Georgia", 30, "bold")
         self.body_font = ("Georgia", 15)
@@ -94,7 +99,13 @@ class LoveLetterApp:
         self.button_font = ("Helvetica", 12, "bold")
 
         self.card = tk.Frame(self.root, bg=PANEL, bd=0, highlightthickness=0)
-        self.card_window = self.canvas.create_window(410, 310, window=self.card, width=560, height=360)
+        self.card_window = self.canvas.create_window(
+            450,
+            350,
+            window=self.card,
+            width=CARD_WIDTH,
+            height=CARD_HEIGHT,
+        )
 
         self._show_envelope()
         self._seed_hearts()
@@ -107,6 +118,11 @@ class LoveLetterApp:
         width = self.canvas.winfo_width()
         height = self.canvas.winfo_height()
         self.canvas.coords(self.card_window, width / 2, height / 2)
+        self.canvas.itemconfigure(
+            self.card_window,
+            width=min(CARD_WIDTH, max(width - 64, 560)),
+            height=min(CARD_HEIGHT, max(height - 64, 420)),
+        )
 
         self.canvas.delete("sparkle")
         for _ in range(34):
@@ -253,6 +269,7 @@ class LoveLetterApp:
     def _show_letter(self) -> None:
         self._clear_card()
         self.card.configure(bg=PANEL)
+        self.prompt_shown = False
 
         tk.Label(
             self.card,
@@ -260,21 +277,41 @@ class LoveLetterApp:
             font=self.title_font,
             fg=ACCENT_DARK,
             bg=PANEL,
-        ).pack(pady=(24, 8))
+        ).pack(pady=(18, 6))
 
-        self.letter_label = tk.Label(
-            self.card,
-            text="",
+        body_frame = tk.Frame(self.card, bg=PANEL)
+        body_frame.pack(padx=36, pady=(6, 8), fill="x")
+
+        self.letter_box = tk.Text(
+            body_frame,
             font=self.body_font,
             fg=TEXT,
             bg=PANEL,
-            justify="left",
-            wraplength=485,
+            wrap="word",
+            width=56,
+            height=12,
+            bd=0,
+            highlightthickness=0,
+            relief="flat",
+            cursor="hand2",
         )
-        self.letter_label.pack(padx=36, pady=10, fill="both", expand=True)
+        self.letter_box.pack(side="left", fill="both", expand=True)
+        self.letter_box.bind("<Button-1>", self._finish_typewriter)
+
+        scrollbar = tk.Scrollbar(body_frame, command=self.letter_box.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.letter_box.configure(yscrollcommand=scrollbar.set)
+
+        tk.Label(
+            self.card,
+            text="click the message to skip the typing",
+            font=self.small_font,
+            fg="#8e5b75",
+            bg=PANEL,
+        ).pack()
 
         self.prompt_frame = tk.Frame(self.card, bg=PANEL)
-        self.prompt_frame.pack(pady=(4, 22))
+        self.prompt_frame.pack(pady=(6, 18))
 
         formatted_lines = [
             line.format(name=RECIPIENT_NAME, sender=SENDER_NAME) for line in LETTER_LINES
@@ -290,12 +327,39 @@ class LoveLetterApp:
             return
 
         self.current_text += self.target_text[index]
-        self.letter_label.configure(text=self.current_text + "▌")
-        delay = 28 if self.target_text[index] != "\n" else 140
+        self._set_letter_text(self.current_text + "▌")
+        delay = (
+            TYPEWRITER_DELAY_MS
+            if self.target_text[index] != "\n"
+            else TYPEWRITER_NEWLINE_DELAY_MS
+        )
         self.typewriter_job = self.root.after(delay, self._type_next_character, index + 1)
 
+    def _set_letter_text(self, text: str) -> None:
+        self.letter_box.configure(state="normal")
+        self.letter_box.delete("1.0", "end")
+        self.letter_box.insert("1.0", text)
+        self.letter_box.see("end")
+        self.letter_box.configure(state="disabled")
+
+    def _finish_typewriter(self, _event: tk.Event | None = None) -> str:
+        if self.prompt_shown:
+            return "break"
+
+        if self.typewriter_job:
+            self.root.after_cancel(self.typewriter_job)
+            self.typewriter_job = None
+
+        self.current_text = self.target_text
+        self._show_final_prompt()
+        return "break"
+
     def _show_final_prompt(self) -> None:
-        self.letter_label.configure(text=self.target_text)
+        if self.prompt_shown:
+            return
+
+        self.prompt_shown = True
+        self._set_letter_text(self.target_text)
 
         tk.Label(
             self.prompt_frame,
