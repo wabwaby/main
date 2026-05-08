@@ -6,7 +6,7 @@ Run this from the repository root after customizing main.py:
 
 The finished file will be written to:
 
-    dist/Project Atrocities.exe
+    dist/ProjectAtrocities.exe
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ import sys
 from pathlib import Path
 
 
-APP_NAME = "Project Atrocities"
+APP_NAME = "ProjectAtrocities"
+OLD_OUTPUT_NAMES = ("Project Atrocities.exe",)
 
 
 def run(command: list[str]) -> None:
@@ -56,6 +57,11 @@ def build_exe() -> Path:
     dist_dir = repo_root / "dist"
     build_dir = repo_root / "build"
     icon_file = repo_root / "project-atrocities" / "icon.ico"
+
+    for old_name in OLD_OUTPUT_NAMES:
+        old_output = dist_dir / old_name
+        if old_output.exists():
+            old_output.unlink()
 
     command = [
         sys.executable,
@@ -96,6 +102,11 @@ def main() -> None:
     print()
     print("Done. Send this file:")
     print(exe_path)
+    print()
+    print(
+        "If Windows blocks it, open Windows Security > Virus & threat protection "
+        "> Protection history, then allow/restore it if you trust the file."
+    )
 
 
 if __name__ == "__main__":
