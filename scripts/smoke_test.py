@@ -27,6 +27,14 @@ from aliprice.scraper import (  # noqa: E402
     _price_from_meta,
     _price_from_run_params,
     extract_product_id,
+    extract_product_links,
+)
+from aliprice.session import (  # noqa: E402
+    Config,
+    _parse_cookie_string,
+    build_session,
+    load_config,
+    save_config,
 )
 from aliprice.storage import Storage  # noqa: E402
 
@@ -164,11 +172,73 @@ def test_report():
         check("contains deal badge or note", "tracked product" in html)
 
 
+LISTING_HTML = """
+<!doctype html><html><body>
+  <div class="card">
+    <a href="/item/1005006111111111.html" title="Cheap Headphones">
+      <img src="x.jpg"></a>
+  </div>
+  <div class="card">
+    <a href="https://www.aliexpress.com/item/1005006222222222.html">
+      Mid-range thing</a>
+  </div>
+  <a href="//aliexpress.com/item/1005006333333333.html?spm=foo">Inline link</a>
+  <script>
+    var feed = {"items":[{"productId":"1005006444444444","title":"From JSON"}]};
+  </script>
+  <a href="/item/notanumber.html">irrelevant</a>
+</body></html>
+"""
+
+
+def test_extract_product_links():
+    print("listing-page link extraction")
+    items = extract_product_links(LISTING_HTML)
+    ids = sorted(i.product_id for i in items)
+    check(
+        "found four products",
+        ids == [
+            "1005006111111111",
+            "1005006222222222",
+            "1005006333333333",
+            "1005006444444444",
+        ],
+        ", ".join(ids),
+    )
+    by_id = {i.product_id: i for i in items}
+    check(
+        "title attached to anchor item",
+        by_id["1005006111111111"].title == "Cheap Headphones",
+    )
+    check(
+        "url is absolute",
+        all(i.url.startswith("http") for i in items),
+    )
+
+
+def test_session_config():
+    print("session config")
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "config.json")
+        cfg = Config(cookie_string="a=1; b=2", region="US")
+        save_config(cfg, path)
+        loaded = load_config(path)
+        check("cookie string round-trip", loaded.cookie_string == "a=1; b=2")
+        check("region round-trip", loaded.region == "US")
+        parsed = _parse_cookie_string("a=1; b=hello world; c=")
+        check("parses cookies", parsed == {"a": "1", "b": "hello world", "c": ""})
+        session = build_session(cfg)
+        cookie_names = {c.name for c in session.cookies}
+        check("cookies applied to session", {"a", "b"}.issubset(cookie_names))
+
+
 if __name__ == "__main__":
     test_price_normalize()
     test_product_id()
     test_storage()
     test_deals()
     test_scraper_parsers()
+    test_extract_product_links()
+    test_session_config()
     test_report()
     print("\nall smoke tests passed.")

@@ -64,6 +64,13 @@ class ScrapeResult:
     raw_price_text: Optional[str] = None
 
 
+@dataclass
+class DiscoveredProduct:
+    product_id: str
+    url: str
+    title: Optional[str] = None
+
+
 class ScrapeError(Exception):
     """Raised when scraping fails or a price cannot be located."""
 
@@ -250,6 +257,77 @@ def _price_from_meta(html: str) -> Optional[tuple[float, Optional[str], Optional
             currency = currency_meta["content"] if currency_meta and currency_meta.get("content") else None
             return price, currency, title, price_meta["content"]
     return None
+
+
+ITEM_LINK_RE = re.compile(
+    r"""(?:https?:)?//(?:[a-z0-9.-]*\.)?aliexpress\.[a-z]+/item/(\d{6,})\.html""",
+    re.IGNORECASE,
+)
+ITEM_PATH_RE = re.compile(r"""['"](?:/|https?:[^'"]*?/)item/(\d{6,})\.html['"]""", re.IGNORECASE)
+PRODUCT_ID_KEY_RE = re.compile(r'"productId"\s*:\s*"?(\d{6,})"?')
+
+
+def extract_product_links(html: str, *, base_host: str = "www.aliexpress.com") -> list[DiscoveredProduct]:
+    """Find every distinct product id referenced in a chunk of HTML.
+
+    Designed to work on wishlist / cart / category / search pages where one
+    HTML document references many products. Tries three signals:
+
+    * fully-qualified ``//*.aliexpress.*/item/<id>.html`` URLs
+    * relative ``/item/<id>.html`` links
+    * inline JSON ``"productId": "<id>"`` blobs
+    """
+    found: dict[str, DiscoveredProduct] = {}
+
+    for m in ITEM_LINK_RE.finditer(html):
+        pid = m.group(1)
+        url = m.group(0)
+        if url.startswith("//"):
+            url = "https:" + url
+        found.setdefault(pid, DiscoveredProduct(product_id=pid, url=url))
+
+    for m in ITEM_PATH_RE.finditer(html):
+        pid = m.group(1)
+        if pid in found:
+            continue
+        found[pid] = DiscoveredProduct(
+            product_id=pid,
+            url=f"https://{base_host}/item/{pid}.html",
+        )
+
+    for m in PRODUCT_ID_KEY_RE.finditer(html):
+        pid = m.group(1)
+        if pid in found:
+            continue
+        found[pid] = DiscoveredProduct(
+            product_id=pid,
+            url=f"https://{base_host}/item/{pid}.html",
+        )
+
+    soup = BeautifulSoup(html, "html.parser")
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        m = re.search(r"/item/(\d{6,})\.html", href)
+        if not m:
+            continue
+        pid = m.group(1)
+        if pid not in found:
+            continue
+        title_text = (a.get("title") or a.get_text(" ", strip=True) or "").strip()
+        if title_text and not found[pid].title:
+            found[pid].title = title_text[:200]
+
+    return list(found.values())
+
+
+def discover_from_url(
+    url: str,
+    *,
+    session: Optional[requests.Session] = None,
+) -> list[DiscoveredProduct]:
+    """Fetch a listing-style AliExpress page and return its product links."""
+    _, html = fetch_html(url, session=session)
+    return extract_product_links(html)
 
 
 def scrape(url: str, *, session: Optional[requests.Session] = None) -> ScrapeResult:

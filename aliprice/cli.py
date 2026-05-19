@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 import webbrowser
@@ -15,7 +16,15 @@ from rich.table import Table
 from . import __version__
 from .deals import DealSignal, evaluate
 from .report import build as build_report
-from .scraper import ScrapeError, ScrapeResult, extract_product_id, scrape
+from .scraper import (
+    DiscoveredProduct,
+    ScrapeError,
+    ScrapeResult,
+    discover_from_url,
+    extract_product_id,
+    scrape,
+)
+from .session import Config, build_session, load_config, save_config
 from .storage import Product, Storage
 
 console = Console()
@@ -209,6 +218,213 @@ def cmd_history(args: argparse.Namespace) -> int:
     return 0
 
 
+WISHLIST_URLS = [
+    "https://www.aliexpress.com/p/wishlist/index.html",
+    "https://www.aliexpress.com/p/wish/wishlist.html",
+]
+CART_URLS = [
+    "https://www.aliexpress.com/p/shoppingcart/index.html",
+    "https://shoppingcart.aliexpress.com/shopcart/shopcartDetail.htm",
+]
+
+
+def cmd_login(args: argparse.Namespace) -> int:
+    """Save AliExpress session credentials so we can browse as you."""
+    cfg = load_config()
+    changed = False
+    if args.cookie:
+        cfg.cookie_string = args.cookie.strip()
+        cfg.cookies_file = None
+        changed = True
+    if args.cookies_file:
+        path = os.path.abspath(os.path.expanduser(args.cookies_file))
+        if not os.path.exists(path):
+            console.print(f"[red]cookies file not found:[/] {path}")
+            return 2
+        cfg.cookies_file = path
+        cfg.cookie_string = None
+        changed = True
+    if args.clear:
+        cfg = Config()
+        changed = True
+
+    if not changed:
+        if cfg.has_session():
+            console.print("[green]session configured[/]")
+            if cfg.cookies_file:
+                console.print(f"  cookies file: {cfg.cookies_file}")
+            elif cfg.cookie_string:
+                console.print(f"  cookie string: {cfg.cookie_string[:40]}…")
+        else:
+            console.print(
+                "[yellow]no session configured.[/]\n"
+                "Provide one with either:\n"
+                "  aliprice login --cookie \"AKAM=...; ali_apache_id=...; ...\"\n"
+                "  aliprice login --cookies-file ~/Downloads/aliexpress-cookies.txt\n\n"
+                "To get a cookie string in Chrome/Firefox: open aliexpress.com while "
+                "logged in, open DevTools → Network → click any request → copy the "
+                "value of the [bold]Cookie[/] request header. To export a Netscape "
+                "cookies.txt file use an extension like \"Get cookies.txt LOCALLY\"."
+            )
+        return 0
+
+    save_config(cfg)
+    console.print("[green]session saved[/]")
+    return 0
+
+
+def _discover_targets(args: argparse.Namespace) -> list[tuple[str, str]]:
+    """Return a list of (label, url) tuples to scan for product links."""
+    targets: list[tuple[str, str]] = []
+    if args.url:
+        targets.append(("custom", args.url))
+        return targets
+    if args.wishlist or not (args.cart or args.url):
+        for u in WISHLIST_URLS:
+            targets.append(("wishlist", u))
+    if args.cart:
+        for u in CART_URLS:
+            targets.append(("cart", u))
+    return targets
+
+
+def cmd_discover(args: argparse.Namespace) -> int:
+    """Pull product links from your wishlist / cart / a custom URL."""
+    cfg = load_config()
+    needs_auth = not args.url
+    if needs_auth and not cfg.has_session():
+        console.print(
+            "[yellow]your wishlist and cart require a logged-in session.[/]\n"
+            "Run [bold]aliprice login --cookie \"...\"[/] first, or pass "
+            "[bold]--url <listing-url>[/] to scan a specific public page."
+        )
+        return 2
+
+    session = build_session(cfg)
+    storage = Storage(args.db) if args.db else Storage()
+
+    seen: dict[str, DiscoveredProduct] = {}
+    for label, url in _discover_targets(args):
+        try:
+            items = discover_from_url(url, session=session)
+        except ScrapeError as exc:
+            console.print(f"[red]{label}[/] {url}: {exc}")
+            continue
+        new_in_source = 0
+        for it in items:
+            if it.product_id not in seen:
+                seen[it.product_id] = it
+                new_in_source += 1
+        console.print(
+            f"[cyan]{label}[/] {url} → {len(items)} item(s), {new_in_source} new"
+        )
+
+    if not seen:
+        console.print(
+            "[yellow]no products discovered.[/]\n"
+            "If you're trying to read your wishlist or cart, double-check that "
+            "your cookies are current — AliExpress invalidates them periodically. "
+            "You can also try [bold]--url <listing-url>[/] for a page you can see "
+            "while logged out."
+        )
+        return 1
+
+    console.print(f"\n[bold]found {len(seen)} unique product(s)[/]")
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Product ID")
+    table.add_column("Title", max_width=60)
+    table.add_column("URL", max_width=50)
+    for it in seen.values():
+        table.add_row(it.product_id, it.title or "", it.url)
+    console.print(table)
+
+    if not args.auto_add:
+        console.print(
+            "\nRe-run with [bold]--auto-add[/] to start tracking all of them, "
+            "or copy the URLs you care about and `aliprice add <url>` them individually."
+        )
+        return 0
+
+    added = 0
+    skipped = 0
+    for it in seen.values():
+        existing = storage.get_product(it.product_id)
+        if existing:
+            skipped += 1
+            continue
+        storage.add_product(product_id=it.product_id, url=it.url, title=it.title)
+        added += 1
+
+    console.print(
+        f"\n[green]added[/] {added} new product(s) "
+        f"({skipped} already tracked)."
+    )
+
+    if added and not args.no_fetch:
+        console.print("\nfetching initial prices…")
+        targets = storage.list_products()
+        for i, product in enumerate(targets):
+            if storage.latest_price(product.product_id):
+                continue
+            _check_one(storage, product, session=session)
+            if i < len(targets) - 1 and args.delay > 0:
+                time.sleep(args.delay)
+    return 0
+
+
+def _read_urls(args: argparse.Namespace) -> list[str]:
+    urls: list[str] = []
+    if args.file:
+        with open(args.file, "r", encoding="utf-8") as f:
+            urls.extend(line.strip() for line in f if line.strip())
+    if args.urls:
+        urls.extend(args.urls)
+    if not urls and not sys.stdin.isatty():
+        urls.extend(line.strip() for line in sys.stdin if line.strip())
+    return [u for u in urls if u and not u.startswith("#")]
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    """Bulk-add a list of AliExpress URLs from a file, args, or stdin."""
+    raw = _read_urls(args)
+    if not raw:
+        console.print(
+            "[yellow]no URLs provided.[/] Pass them as args, with [bold]--file PATH[/], "
+            "or pipe them on stdin (one per line)."
+        )
+        return 2
+
+    storage = Storage(args.db) if args.db else Storage()
+    session = build_session() if not args.no_fetch else None
+
+    added = 0
+    skipped = 0
+    failed = 0
+    for url in raw:
+        pid = extract_product_id(url)
+        if not pid:
+            console.print(f"[yellow]skip[/] {url}  (no product id)")
+            failed += 1
+            continue
+        if storage.get_product(pid):
+            skipped += 1
+            continue
+        storage.add_product(product_id=pid, url=url)
+        added += 1
+        if not args.no_fetch and session is not None:
+            product = storage.get_product(pid)
+            if product:
+                _check_one(storage, product, session=session)
+                if args.delay > 0:
+                    time.sleep(args.delay)
+
+    console.print(
+        f"\n[green]imported[/] {added} new · "
+        f"[dim]{skipped} already tracked · {failed} unparseable[/]"
+    )
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     storage = Storage(args.db) if args.db else Storage()
     out = build_report(storage, args.output)
@@ -266,6 +482,64 @@ def build_parser() -> argparse.ArgumentParser:
     p_hist = sub.add_parser("history", help="Show price history for a product.")
     p_hist.add_argument("product")
     p_hist.set_defaults(func=cmd_history)
+
+    p_login = sub.add_parser(
+        "login",
+        help="Save AliExpress session cookies so the tool can read your "
+        "wishlist / cart / personalized pages.",
+    )
+    p_login.add_argument(
+        "--cookie",
+        help="Paste the value of the Cookie header from your browser DevTools "
+        "while logged in to aliexpress.com.",
+    )
+    p_login.add_argument(
+        "--cookies-file",
+        help="Path to a Netscape-format cookies.txt exported from your browser.",
+    )
+    p_login.add_argument(
+        "--clear", action="store_true", help="Forget any saved credentials."
+    )
+    p_login.set_defaults(func=cmd_login)
+
+    p_disc = sub.add_parser(
+        "discover",
+        help="Auto-discover products from your wishlist, cart, or any listing URL.",
+    )
+    p_disc.add_argument("--wishlist", action="store_true", help="Scan your wishlist (default).")
+    p_disc.add_argument("--cart", action="store_true", help="Also scan your shopping cart.")
+    p_disc.add_argument(
+        "--url",
+        help="Scan a specific page instead (e.g. a category, search results, or shared list).",
+    )
+    p_disc.add_argument(
+        "--auto-add",
+        action="store_true",
+        help="Add every discovered product to the tracker (otherwise just print them).",
+    )
+    p_disc.add_argument(
+        "--no-fetch",
+        action="store_true",
+        help="Skip the initial price fetch for newly-added products.",
+    )
+    p_disc.add_argument(
+        "--delay", type=float, default=2.0, help="Seconds between price requests (default 2)."
+    )
+    p_disc.set_defaults(func=cmd_discover)
+
+    p_imp = sub.add_parser(
+        "import",
+        help="Bulk-add a list of AliExpress URLs (args, --file PATH, or piped on stdin).",
+    )
+    p_imp.add_argument("urls", nargs="*", help="One or more URLs.")
+    p_imp.add_argument("--file", help="File with one URL per line ('#' starts a comment).")
+    p_imp.add_argument(
+        "--no-fetch", action="store_true", help="Skip initial price fetch."
+    )
+    p_imp.add_argument(
+        "--delay", type=float, default=2.0, help="Seconds between requests (default 2)."
+    )
+    p_imp.set_defaults(func=cmd_import)
 
     p_report = sub.add_parser("report", help="Generate a local HTML dashboard.")
     p_report.add_argument(
