@@ -64,3 +64,16 @@ create policy "Cards are readable by anyone"
 -- No insert/update/delete policies are defined on purpose — writes must go
 -- through the backend (service role). Do NOT expose the service role key
 -- to the browser.
+
+-- ---------------------------------------------------------------------------
+-- Storage bucket for re-hosted card images.
+--
+-- Bandai's CDN 403s cross-origin image requests, so the backend downloads
+-- each image server-side and uploads it into this bucket. The bucket is
+-- PUBLIC so the frontend can render <img src="…"> straight from the
+-- Supabase CDN. Writes still require the service role (the backend).
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('card-images', 'card-images', true)
+on conflict (id) do update set public = excluded.public;
+
