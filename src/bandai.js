@@ -104,12 +104,14 @@ function parseHtml(html, sourceUrl) {
     fields.type  = pick('card type', 'type');
     fields.color = pick('color', 'colour');
 
-    // Grab the main card image if we can find one.
+    // Grab the main card image if we can find one. We keep this as the
+    // SOURCE url (Bandai CDN). The server will download the bytes and
+    // re-host them on Supabase Storage before writing `image_url`.
     const img =
         $('.cardImg img, .card_img img, .cardImage img').first().attr('src') ||
         $('meta[property="og:image"]').attr('content');
     if (img) {
-        fields.image_url = new URL(img, sourceUrl).toString();
+        fields.source_image_url = new URL(img, sourceUrl).toString();
     }
 
     return { fields, raw };
@@ -126,7 +128,7 @@ function parseJson(body) {
             card_name: node?.card_name || node?.name,
             type: node?.card_type || node?.type,
             color: node?.color,
-            image_url: node?.image_url || node?.img,
+            source_image_url: node?.image_url || node?.img,
         },
         raw: node || {},
     };
@@ -157,14 +159,24 @@ async function fetchCard({ url, cardId }) {
     }
 
     return {
-        id: cardNumber,
-        card_name: (fields.card_name || '').trim() || cardNumber,
-        card_number: cardNumber,
-        type: fields.type?.trim() || null,
-        color: fields.color?.trim() || null,
-        text_data: { raw },
-        image_url: fields.image_url || null,
-        raw_bandai_url: sourceUrl,
+        // Row to upsert (minus image_url, which the server fills in after
+        // re-hosting the image to Supabase Storage).
+        row: {
+            id: cardNumber,
+            card_name: (fields.card_name || '').trim() || cardNumber,
+            card_number: cardNumber,
+            type: fields.type?.trim() || null,
+            color: fields.color?.trim() || null,
+            text_data: {
+                raw,
+                // Keep the original Bandai image URL for provenance /
+                // re-scrape, even after we rehost the bytes.
+                source_image_url: fields.source_image_url || null,
+            },
+            image_url: null,
+            raw_bandai_url: sourceUrl,
+        },
+        sourceImageUrl: fields.source_image_url || null,
     };
 }
 
