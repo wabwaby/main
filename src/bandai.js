@@ -1,8 +1,10 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-const DEFAULT_BASE_URL =
-    process.env.BANDAI_CARD_BASE_URL || 'https://www.gundam-gcg.com/en/cards/index.php';
+// The card *list* page is a filter UI; the actual card data lives on the
+// detail page. We always resolve a bare card id to the detail URL.
+const DEFAULT_DETAIL_URL =
+    process.env.BANDAI_CARD_DETAIL_URL || 'https://www.gundam-gcg.com/en/cards/detail.php';
 
 // A realistic desktop Chrome UA — Bandai's CDN returns 403 for obvious
 // scraper user-agents (curl/axios/python-requests/etc.).
@@ -29,10 +31,8 @@ function resolveSourceUrl({ url, cardId }) {
         return parsed.toString();
     }
     if (cardId) {
-        const u = new URL(DEFAULT_BASE_URL);
-        u.searchParams.set('search', 'true');
-        u.searchParams.set('keyword_type[]', 'no');
-        u.searchParams.set('keyword', cardId);
+        const u = new URL(DEFAULT_DETAIL_URL);
+        u.searchParams.set('detailSearch', cardId.trim());
         return u.toString();
     }
     throw new Error('Provide either `url` or `cardId`.');
@@ -53,66 +53,67 @@ async function fetchSource(sourceUrl) {
 }
 
 /**
- * Best-effort extractor for Bandai card detail pages. Bandai's markup changes
- * occasionally, so we try several common patterns (dt/dd pairs, labeled rows,
- * then fall back to meta tags) and keep anything we couldn't classify in
- * `text_data.raw` for the frontend to display verbatim.
+ * Extract card data from a gundam-gcg.com detail page.
+ *
+ * Observed structure (ST01-001):
+ *   .cardNo       → "ST01-001"
+ *   .cardName     → "Gundam"
+ *   .cardImage img[src] → "../images/cards/card/ST01-001.webp?261016"
+ *   .dataBox > .dataTit + .dataTxt   → labeled rows (Lv., COST, COLOR, TYPE,
+ *                                       Zone, Trait, Link, AP, HP,
+ *                                       Source Title, Where to get it)
+ *   .cardDataRow > .dataTxt.isRegular (no dataTit) → the card's rules /
+ *                                                     effect text block
+ *
+ * We normalize the common fields and keep everything in `raw` so any extra
+ * labels Bandai introduces are still captured.
  */
 function parseHtml(html, sourceUrl) {
     const $ = cheerio.load(html);
 
-    const fields = {};
     const raw = {};
 
-    // Pattern 1: <dl><dt>Label</dt><dd>Value</dd>…</dl>
-    $('dl').each((_, dl) => {
-        const $dl = $(dl);
-        const dts = $dl.find('dt');
-        const dds = $dl.find('dd');
-        dts.each((i, dt) => {
-            const label = $(dt).text().trim().toLowerCase();
-            const value = $(dds[i]).text().trim();
-            if (label && value) raw[label] = value;
-        });
-    });
-
-    // Pattern 2: rows like <div class="dataTxt"><span class="label">…</span>Value</div>
-    $('[class*="dataBox"], [class*="dataTxt"], [class*="data_txt"]').each((_, el) => {
+    // Labeled .dataBox pairs.
+    $('.dataBox').each((_, el) => {
         const $el = $(el);
-        const label = $el.find('.label, .dataTtl, .data_ttl, h4, h5').first().text().trim().toLowerCase();
-        const valueEl = $el.clone();
-        valueEl.find('.label, .dataTtl, .data_ttl, h4, h5').remove();
-        const value = valueEl.text().replace(/\s+/g, ' ').trim();
-        if (label && value) raw[label] = value;
+        const label = $el.find('.dataTit').first().text().replace(/\s+/g, ' ').trim();
+        const value = $el.find('.dataTxt').first().text().replace(/\s+/g, ' ').trim();
+        if (label && value) raw[label.toLowerCase()] = value;
     });
 
-    const pick = (...keys) => {
-        for (const k of keys) {
-            const hit = Object.keys(raw).find((rk) => rk.includes(k));
-            if (hit) return raw[hit];
-        }
-        return undefined;
-    };
+    // Rules / effect text: .dataTxt that isn't paired with a .dataTit.
+    // Preserve line breaks (Bandai separates effects with <br>).
+    const effectParts = [];
+    $('.cardDataRow > .dataTxt, .cardDataRow .dataTxt.isRegular').each((_, el) => {
+        const $el = $(el);
+        // Replace <br> with newlines so effects stay readable.
+        $el.find('br').replaceWith('\n');
+        const text = $el.text().replace(/[ \t]+/g, ' ').replace(/\n[ \t]+/g, '\n').trim();
+        if (text) effectParts.push(text);
+    });
+    const effectText = effectParts.join('\n\n');
+    if (effectText) raw['effect'] = effectText;
 
-    fields.card_number = pick('card no', 'card number', 'number', 'no.') ||
-        $('meta[name="card_no"]').attr('content');
+    // Direct selectors for the structured fields.
+    const cardNumber =
+        $('.cardNo').first().text().trim() || null;
+    const cardName =
+        $('.cardName').first().text().trim() || null;
 
-    fields.card_name = pick('card name', 'name') ||
-        $('h1, .cardName, .card_name').first().text().trim() ||
-        $('meta[property="og:title"]').attr('content');
-
-    fields.type  = pick('card type', 'type');
-    fields.color = pick('color', 'colour');
-
-    // Grab the main card image if we can find one. We keep this as the
-    // SOURCE url (Bandai CDN). The server will download the bytes and
-    // re-host them on Supabase Storage before writing `image_url`.
-    const img =
-        $('.cardImg img, .card_img img, .cardImage img').first().attr('src') ||
+    // Image lives in .cardImage; fall back to og:image only if nothing better.
+    const rawImg =
+        $('.cardImage img').first().attr('src') ||
+        $('.cardImage img').first().attr('data-src') ||
         $('meta[property="og:image"]').attr('content');
-    if (img) {
-        fields.source_image_url = new URL(img, sourceUrl).toString();
-    }
+    const sourceImageUrl = rawImg ? new URL(rawImg, sourceUrl).toString() : null;
+
+    const fields = {
+        card_number: cardNumber,
+        card_name: cardName,
+        type: raw['type'] || null,       // "UNIT", "COMMAND", "PILOT", "BASE", "RESOURCE"
+        color: raw['color'] || null,     // "Blue", "Green", "Red", "White", "Purple"
+        source_image_url: sourceImageUrl,
+    };
 
     return { fields, raw };
 }
