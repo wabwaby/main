@@ -1,0 +1,23 @@
+{
+  "name": "gundam-card-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lightweight Express proxy/scraper that fetches Gundam Card Game data from Bandai and upserts it into Supabase.",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "axios": "^1.7.7",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  }
+}
