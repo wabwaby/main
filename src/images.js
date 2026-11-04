@@ -2,19 +2,9 @@ const path = require('path');
 const axios = require('axios');
 
 const { supabase } = require('./supabase');
+const { IMAGE_HEADERS: BROWSER_HEADERS } = require('./http');
 
 const BUCKET = process.env.SUPABASE_IMAGE_BUCKET || 'card-images';
-
-// Same UA trick as the HTML scraper — Bandai's CDN serves the images with
-// the same 403 behavior as the card pages when it doesn't like the client.
-const BROWSER_HEADERS = {
-    'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
-    Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-    Referer: 'https://www.gundam-gcg.com/en/cards/',
-};
 
 const EXT_FROM_MIME = {
     'image/png': 'png',
@@ -37,14 +27,16 @@ function extFor(sourceUrl, contentType) {
 }
 
 /**
- * Download the image at `sourceUrl` with browser headers, upload it to the
- * public Supabase Storage bucket under `cards/<cardId>.<ext>`, and return
- * its public URL. Throws on any failure — the caller decides whether a
+ * Download the image at `sourceUrl` with browser headers and upload it to
+ * the public Supabase Storage bucket. By default the object lands at
+ * `cards/<cardId>.<ext>`; pass `storageName` to override (used by variants
+ * like `<baseId>_p1`). Throws on any failure — the caller decides whether a
  * missing image should fail the whole request.
  */
-async function rehostImage({ sourceUrl, cardId }) {
+async function rehostImage({ sourceUrl, cardId, storageName }) {
     if (!sourceUrl) throw new Error('rehostImage: sourceUrl is required');
-    if (!cardId) throw new Error('rehostImage: cardId is required');
+    const name = (storageName || cardId || '').trim();
+    if (!name) throw new Error('rehostImage: cardId or storageName is required');
 
     const res = await axios.get(sourceUrl, {
         headers: BROWSER_HEADERS,
@@ -58,7 +50,7 @@ async function rehostImage({ sourceUrl, cardId }) {
 
     const contentType = (res.headers['content-type'] || 'image/png').split(';')[0].trim();
     const ext = extFor(sourceUrl, contentType);
-    const objectPath = `cards/${cardId}.${ext}`;
+    const objectPath = `cards/${name}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
         .from(BUCKET)
