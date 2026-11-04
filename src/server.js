@@ -3,9 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
-const { supabase } = require('./supabase');
-const { fetchCard } = require('./bandai');
-const { rehostImage } = require('./images');
+const { scrapeCard } = require('./scrape');
 
 const app = express();
 app.use(express.json({ limit: '64kb' }));
@@ -47,42 +45,8 @@ async function handleFetchAndStore(req, res) {
     }
 
     try {
-        const { row, sourceImageUrl } = await fetchCard({ url, cardId });
-
-        // Download the image bytes from Bandai and re-host them on Supabase
-        // Storage so the browser can render <img src="…"> without hitting
-        // Bandai's 403 CORS wall. Best-effort: if this step fails we still
-        // save the card (image_url stays null) and surface the reason.
-        let imageWarning = null;
-        if (sourceImageUrl) {
-            try {
-                const { publicUrl } = await rehostImage({
-                    sourceUrl: sourceImageUrl,
-                    cardId: row.id,
-                });
-                row.image_url = publicUrl;
-            } catch (imgErr) {
-                imageWarning = imgErr.message;
-                console.warn('[fetch-and-store-card] image rehost failed', {
-                    cardId: row.id,
-                    sourceImageUrl,
-                    message: imgErr.message,
-                });
-            }
-        }
-
-        const { data, error } = await supabase
-            .from('cards')
-            .upsert(row, { onConflict: 'id' })
-            .select()
-            .single();
-
-        if (error) {
-            console.error('[supabase] upsert failed', error);
-            return res.status(502).json({ error: 'Supabase upsert failed', detail: error.message });
-        }
-
-        return res.status(200).json({ card: data, imageWarning });
+        const result = await scrapeCard({ url, cardId });
+        return res.status(200).json(result);
     } catch (err) {
         const status = err.status || (err.response?.status ?? 500);
         console.error('[fetch-and-store-card] failed', {
