@@ -1,25 +1,12 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
+const { BROWSER_HEADERS } = require('./http');
+
 // The card *list* page is a filter UI; the actual card data lives on the
 // detail page. We always resolve a bare card id to the detail URL.
 const DEFAULT_DETAIL_URL =
     process.env.BANDAI_CARD_DETAIL_URL || 'https://www.gundam-gcg.com/en/cards/detail.php';
-
-// A realistic desktop Chrome UA — Bandai's CDN returns 403 for obvious
-// scraper user-agents (curl/axios/python-requests/etc.).
-const BROWSER_HEADERS = {
-    'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
-    Accept:
-        'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,' +
-        'image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Cache-Control': 'no-cache',
-    Pragma: 'no-cache',
-    Referer: 'https://www.gundam-gcg.com/en/cards/',
-};
 
 /**
  * Resolve the source URL to scrape. Accepts either a full Bandai URL or a
